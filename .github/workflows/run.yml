@@ -97,7 +97,7 @@ jobs:
           git config --global user.email '${{ vars.EMAIL }}'
           git config --global user.name '${{ vars.NAME }}'
           git checkout main
-          git add .github/workflows/run.yml js/data-config.js ai/build_infra_dataset.py
+          git add .github/workflows/run.yml js/data-config.js ai/build_infra_dataset.py .gitignore
           if git diff --staged --quiet; then
             echo 'No code changes to commit'
           else
@@ -131,7 +131,7 @@ jobs:
           cp -r /tmp/data_files/data/* data/ 2>/dev/null || true
           cp /tmp/data_files/assets/file-list.txt assets/file-list.txt
 
-          git add data assets/file-list.txt
+          git add -f data/*.jsonl assets/file-list.txt
           if git diff --staged --quiet; then
             echo 'No data changes to commit'
           else

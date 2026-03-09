@@ -1,8 +1,11 @@
 import os
 import json
+import time
+import random
 import argparse
 import urllib.request
 import urllib.parse
+import urllib.error
 import xml.etree.ElementTree as ET
 from typing import List, Dict
 import requests
@@ -55,6 +58,8 @@ C. 端侧/硬件侧推理优化：FPGA/NPU/accelerator/edge inference/memory-bou
 输出 JSON：{"relevant": true/false, "score": 0-10, "reason": "简短中文理由"}
 """.strip()
 
+ARXIV_USER_AGENT = 'daily-arxiv-ai-enhanced/1.0 (GitHub Actions; contact: repo-actions)'
+
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -65,6 +70,29 @@ def parse_args():
     return p.parse_args()
 
 
+def fetch_url_with_retry(url: str, timeout: int = 120, retries: int = 6) -> bytes:
+    last_error = None
+    for attempt in range(1, retries + 1):
+        req = urllib.request.Request(url, headers={'User-Agent': ARXIV_USER_AGENT})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as e:
+            last_error = e
+            if e.code == 429:
+                sleep_s = min(90, 8 * attempt + random.uniform(1, 4))
+                print(f'arXiv rate limited (attempt {attempt}/{retries}), sleeping {sleep_s:.1f}s...')
+                time.sleep(sleep_s)
+                continue
+            raise
+        except Exception as e:
+            last_error = e
+            sleep_s = min(30, 3 * attempt + random.uniform(0.5, 2))
+            print(f'arXiv fetch failed (attempt {attempt}/{retries}): {e}; sleeping {sleep_s:.1f}s...')
+            time.sleep(sleep_s)
+    raise RuntimeError(f'Failed to fetch arXiv feed after {retries} attempts: {last_error}')
+
+
 def fetch_candidates(target_date: str, max_results: int) -> List[Dict]:
     params = {
         'search_query': CATEGORIES,
@@ -73,8 +101,8 @@ def fetch_candidates(target_date: str, max_results: int) -> List[Dict]:
         'sortBy': 'submittedDate',
         'sortOrder': 'descending',
     }
-    url = 'http://export.arxiv.org/api/query?' + urllib.parse.urlencode(params)
-    xml = urllib.request.urlopen(url, timeout=120).read()
+    url = 'https://export.arxiv.org/api/query?' + urllib.parse.urlencode(params)
+    xml = fetch_url_with_retry(url, timeout=120, retries=6)
     root = ET.fromstring(xml)
     ns = {'atom': 'http://www.w3.org/2005/Atom'}
     rows = []
