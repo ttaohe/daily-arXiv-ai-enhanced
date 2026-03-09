@@ -2,11 +2,20 @@ name: arXiv-daily-ai-enhanced
 
 on:
   schedule:
-    - cron: '30 1 * * *'
+    # 08:00 Asia/Shanghai = 00:00 UTC
+    - cron: '0 0 * * *'
   workflow_dispatch:
     inputs:
       target_date:
-        description: 'Target arXiv submission date (YYYY-MM-DD). Leave empty for UTC today.'
+        description: 'Single target date (YYYY-MM-DD)'
+        required: false
+        type: string
+      start_date:
+        description: 'Backfill start date (YYYY-MM-DD)'
+        required: false
+        type: string
+      end_date:
+        description: 'Backfill end date (YYYY-MM-DD)'
         required: false
         type: string
       max_results:
@@ -19,6 +28,9 @@ on:
         required: false
         default: '7'
         type: string
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -35,81 +47,83 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           uv sync
 
-      - name: Resolve target date
+      - name: Resolve date range
         id: params
+        shell: bash
         run: |
           target_date="${{ github.event.inputs.target_date }}"
-          if [ -z "$target_date" ]; then
-            target_date=$(date -u "+%Y-%m-%d")
-          fi
+          start_date="${{ github.event.inputs.start_date }}"
+          end_date="${{ github.event.inputs.end_date }}"
           max_results="${{ github.event.inputs.max_results }}"
+          threshold="${{ github.event.inputs.threshold }}"
+
           if [ -z "$max_results" ]; then
             max_results=500
           fi
-          threshold="${{ github.event.inputs.threshold }}"
           if [ -z "$threshold" ]; then
             threshold=7
           fi
-          echo "target_date=$target_date" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$target_date" ]; then
+            resolved_start="$target_date"
+            resolved_end="$target_date"
+          elif [ -n "$start_date" ] && [ -n "$end_date" ]; then
+            resolved_start="$start_date"
+            resolved_end="$end_date"
+          else
+            resolved_start=$(TZ=Asia/Shanghai date -d 'yesterday' '+%Y-%m-%d')
+            resolved_end="$resolved_start"
+          fi
+
+          echo "start_date=$resolved_start" >> "$GITHUB_OUTPUT"
+          echo "end_date=$resolved_end" >> "$GITHUB_OUTPUT"
           echo "max_results=$max_results" >> "$GITHUB_OUTPUT"
           echo "threshold=$threshold" >> "$GITHUB_OUTPUT"
-          echo "Using target_date=$target_date max_results=$max_results threshold=$threshold"
+          echo "Resolved range: $resolved_start -> $resolved_end"
 
-      - name: Build inference-optimization dataset
+      - name: Generate datasets and AI-enhanced files
+        shell: bash
         run: |
           mkdir -p data assets
           source .venv/bin/activate
-          cd ai
-          export OPENAI_API_KEY='${{ secrets.OPENAI_API_KEY }}'
-          export OPENAI_BASE_URL='${{ secrets.OPENAI_BASE_URL }}'
-          export MODEL_NAME='${{ vars.MODEL_NAME }}'
-          python build_infra_dataset.py \
-            --date '${{ steps.params.outputs.target_date }}' \
-            --max-results '${{ steps.params.outputs.max_results }}' \
-            --threshold '${{ steps.params.outputs.threshold }}' \
-            --output '../data/${{ steps.params.outputs.target_date }}.jsonl'
 
-      - name: AI enhancement processing
-        run: |
-          source .venv/bin/activate
-          cd ai
           export OPENAI_API_KEY='${{ secrets.OPENAI_API_KEY }}'
           export OPENAI_BASE_URL='${{ secrets.OPENAI_BASE_URL }}'
           export LANGUAGE='${{ vars.LANGUAGE }}'
           export MODEL_NAME='${{ vars.MODEL_NAME }}'
-          python enhance.py --data '../data/${{ steps.params.outputs.target_date }}.jsonl'
+
+          current='${{ steps.params.outputs.start_date }}'
+          end='${{ steps.params.outputs.end_date }}'
+
+          while [ "$(date -d "$current" +%s)" -le "$(date -d "$end" +%s)" ]; do
+            echo "=== Processing $current ==="
+            (
+              cd ai
+              python build_infra_dataset.py \
+                --date "$current" \
+                --max-results '${{ steps.params.outputs.max_results }}' \
+                --threshold '${{ steps.params.outputs.threshold }}' \
+                --output "../data/${current}.jsonl"
+              python enhance.py --data "../data/${current}.jsonl"
+            )
+            current=$(date -d "$current +1 day" '+%Y-%m-%d')
+          done
 
       - name: Update file list
+        shell: bash
         run: |
+          mkdir -p assets
           find data -maxdepth 1 -type f \( -name '*_AI_enhanced_Chinese.jsonl' -o -name '*_AI_enhanced_English.jsonl' \) \
             | sed 's|data/||' | sort -r > assets/file-list.txt
           echo 'Updated assets/file-list.txt:'
           cat assets/file-list.txt
 
-      - name: Inject repository info into data-config.js
-        run: |
-          REPO_OWNER='${{ github.repository_owner }}'
-          REPO_NAME='${{ github.event.repository.name }}'
-          sed -i "s/PLACEHOLDER_REPO_OWNER/${REPO_OWNER}/g" js/data-config.js
-          sed -i "s/PLACEHOLDER_REPO_NAME/${REPO_NAME}/g" js/data-config.js
-
-      - name: Commit code changes to main branch
+      - name: Push generated data to data branch
+        shell: bash
         run: |
           git config --global user.email '${{ vars.EMAIL }}'
           git config --global user.name '${{ vars.NAME }}'
-          git checkout main
-          git add .github/workflows/run.yml js/data-config.js ai/build_infra_dataset.py .gitignore
-          if git diff --staged --quiet; then
-            echo 'No code changes to commit'
-          else
-            git commit -m 'chore: align inference dataset workflow'
-            git push origin main
-          fi
 
-      - name: Prepare and push data branch
-        run: |
-          git config --global user.email '${{ vars.EMAIL }}'
-          git config --global user.name '${{ vars.NAME }}'
           mkdir -p /tmp/data_files/data /tmp/data_files/assets
           cp -r data/* /tmp/data_files/data/ 2>/dev/null || true
           cp assets/file-list.txt /tmp/data_files/assets/file-list.txt
@@ -136,6 +150,6 @@ jobs:
           if git diff --staged --quiet; then
             echo 'No data changes to commit'
           else
-            git commit -m "update: ${{ steps.params.outputs.target_date }} inference papers"
+            git commit -m "update: ${{ steps.params.outputs.start_date }} to ${{ steps.params.outputs.end_date }} inference papers"
             git push origin data
           fi
