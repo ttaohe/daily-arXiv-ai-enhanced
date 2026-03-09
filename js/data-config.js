@@ -4,51 +4,27 @@
  * DO NOT EDIT MANUALLY
  *
  * The repository information is injected during the CI/CD build process
- * to enable fetching data from the data branch
+ * to enable fetching data from the data branch.
  */
 
 const DATA_CONFIG = {
-    /**
-     * GitHub repository owner (username)
-     * This will be replaced during GitHub Actions workflow execution
-     */
-    repoOwner: 'dw-dengwei',
-
-    /**
-     * GitHub repository name
-     * This will be replaced during GitHub Actions workflow execution
-     */
-    repoName: 'daily-arXiv-ai-enhanced',
-
-    /**
-     * Data branch name
-     * Default: 'data'
-     */
+    repoOwner: 'PLACEHOLDER_REPO_OWNER',
+    repoName: 'PLACEHOLDER_REPO_NAME',
     dataBranch: 'data',
 
-    /**
-     * Get the base URL for raw GitHub content from data branch
-     * @returns {string} Base URL for raw GitHub content
-     */
     getDataBaseUrl: function() {
         return `https://raw.githubusercontent.com/${this.repoOwner}/${this.repoName}/${this.dataBranch}`;
     },
 
-    /**
-     * Get the full URL for a data file
-     * @param {string} filePath - Relative path to the data file (e.g., 'data/2025-01-01.jsonl')
-     * @returns {string} Full URL to the data file
-     */
     getDataUrl: function(filePath) {
-        // 本地开发：使用相对路径
-        if (window.location.hostname === 'localhost' || 
+        if (
+            window.location.hostname === 'localhost' ||
             window.location.hostname === '127.0.0.1' ||
             window.location.hostname.startsWith('192.168.') ||
-            window.location.hostname.startsWith('43.')) {
+            window.location.hostname.startsWith('43.')
+        ) {
             return filePath;
         }
-        // 生产环境：从 GitHub 加载
         return `${this.getDataBaseUrl()}/${filePath}`;
     }
 };
-
