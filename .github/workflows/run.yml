@@ -57,6 +57,7 @@ jobs:
 
       - name: Build inference-optimization dataset
         run: |
+          mkdir -p data assets
           source .venv/bin/activate
           cd ai
           export OPENAI_API_KEY='${{ secrets.OPENAI_API_KEY }}'
