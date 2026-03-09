@@ -40,6 +40,14 @@ const DATA_CONFIG = {
      * @returns {string} Full URL to the data file
      */
     getDataUrl: function(filePath) {
+        // 本地开发：使用相对路径
+        if (window.location.hostname === 'localhost' || 
+            window.location.hostname === '127.0.0.1' ||
+            window.location.hostname.startsWith('192.168.') ||
+            window.location.hostname.startsWith('43.')) {
+            return filePath;
+        }
+        // 生产环境：从 GitHub 加载
         return `${this.getDataBaseUrl()}/${filePath}`;
     }
 };
