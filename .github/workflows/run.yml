@@ -73,6 +73,15 @@ jobs:
       run: |
         source .venv/bin/activate
         echo "执行去重检查... / Performing intelligent deduplication check..."
+
+        # 手动指定 target_date 的补跑任务，直接绕过去重，确保会发布
+        if [ -n "${{ github.event.inputs.target_date }}" ]; then
+            echo "检测到手动 backfill，跳过去重并强制发布 / Manual backfill detected, bypass dedup and force publish"
+            echo "dedup_exit_code=-1" >> $GITHUB_OUTPUT
+            echo "has_new_content=true" >> $GITHUB_OUTPUT
+            echo "skip_reason=manual_backfill_bypass" >> $GITHUB_OUTPUT
+            exit 0
+        fi
         
         cd daily_arxiv
         # 执行去重检查脚本 / Execute intelligent deduplication check script
