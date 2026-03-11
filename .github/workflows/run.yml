@@ -5,7 +5,7 @@ name: arXiv-daily-ai-enhanced
 
 on:
   schedule:
-    - cron: "30 1 * * *"
+    - cron: "0 1 * * *"
   workflow_dispatch:
     inputs:
       target_date:
@@ -85,8 +85,9 @@ jobs:
         
         cd daily_arxiv
         # 执行去重检查脚本 / Execute intelligent deduplication check script
+        export CRAWL_DATE="${{ steps.crawl_step.outputs.crawl_date }}"
         set +e  # 暂时允许命令失败 / Temporarily allow command failure
-        python daily_arxiv/check_stats.py
+        python daily_arxiv/check_stats.py "$CRAWL_DATE"
         
         # 获取退出码 / Get exit code
         dedup_exit_code=$?

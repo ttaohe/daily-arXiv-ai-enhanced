@@ -12,6 +12,7 @@ import json
 import sys
 import os
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 def load_papers_data(file_path):
     """
@@ -60,7 +61,23 @@ def save_papers_data(papers, file_path):
         print(f"Error saving {file_path}: {e}", file=sys.stderr)
         return False
 
-def perform_deduplication():
+def resolve_target_date():
+    """Resolve the crawl date to inspect.
+
+    Priority:
+    1. CLI arg 1 (YYYY-MM-DD)
+    2. env CRAWL_DATE / TARGET_DATE
+    3. Asia/Shanghai yesterday (matches workflow crawl logic)
+    """
+    cli_date = sys.argv[1] if len(sys.argv) > 1 else None
+    env_date = os.getenv("CRAWL_DATE") or os.getenv("TARGET_DATE")
+    target_date = cli_date or env_date
+    if target_date:
+        return target_date
+    return (datetime.now(ZoneInfo("Asia/Shanghai")) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+
+def perform_deduplication(target_date=None):
     """
     执行多日去重：删除与历史多日重复的论文条目，保留新内容
     Perform deduplication over multiple past days
@@ -73,8 +90,8 @@ def perform_deduplication():
              - "error": 处理错误 / Processing error
     """
 
-    today = datetime.now().strftime("%Y-%m-%d")
-    today_file = f"../data/{today}.jsonl"
+    target_date = target_date or resolve_target_date()
+    today_file = f"../data/{target_date}.jsonl"
     history_days = 7  # 向前追溯几天的数据进行对比
 
     if not os.path.exists(today_file):
@@ -83,15 +100,17 @@ def perform_deduplication():
 
     try:
         today_papers, today_ids = load_papers_data(today_file)
-        print(f"今日论文总数: {len(today_papers)} / Today's total papers: {len(today_papers)}", file=sys.stderr)
+        print(f"目标日期: {target_date} / Target date: {target_date}", file=sys.stderr)
+        print(f"目标日期论文总数: {len(today_papers)} / Target date total papers: {len(today_papers)}", file=sys.stderr)
 
         if not today_papers:
             return "no_data"
 
         # 收集历史多日 ID 集合
         history_ids = set()
+        target_dt = datetime.strptime(target_date, "%Y-%m-%d")
         for i in range(1, history_days + 1):
-            date_str = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
+            date_str = (target_dt - timedelta(days=i)).strftime("%Y-%m-%d")
             history_file = f"../data/{date_str}.jsonl"
             _, past_ids = load_papers_data(history_file)
             history_ids.update(past_ids)
@@ -139,10 +158,11 @@ def main():
     2: 处理错误 / Processing error
     """
     
-    print("正在执行去重检查... / Performing intelligent deduplication check...", file=sys.stderr)
+    target_date = resolve_target_date()
+    print(f"正在执行去重检查，目标日期: {target_date} / Performing intelligent deduplication check for target date: {target_date}", file=sys.stderr)
     
     # 执行去重处理 / Perform deduplication processing
-    dedup_status = perform_deduplication()
+    dedup_status = perform_deduplication(target_date)
     
     if dedup_status == "has_new_content":
         print("✅ 去重完成，发现新内容，继续工作流 / Deduplication completed, new content found, continue workflow", file=sys.stderr)

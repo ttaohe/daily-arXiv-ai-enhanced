@@ -55,8 +55,8 @@ fi
 echo ""
 echo "=== 开始本地调试流程 / Starting Local Debug Workflow ==="
 
-# 获取当前日期 / Get current date
-today=`date -u "+%Y-%m-%d"`
+# 获取目标爬取日期（默认：北京时间昨天）/ Resolve target crawl date (default: yesterday in Asia/Shanghai)
+today=$(TZ=Asia/Shanghai date -d 'yesterday' "+%Y-%m-%d")
 
 echo "本地测试：爬取 $today 的arXiv论文... / Local test: Crawling $today arXiv papers..."
 
@@ -82,7 +82,7 @@ fi
 
 # 第二步：检查去重 / Step 2: Check duplicates  
 echo "步骤2：执行去重检查... / Step 2: Performing intelligent deduplication check..."
-python daily_arxiv/check_stats.py
+python daily_arxiv/check_stats.py "$today"
 dedup_exit_code=$?
 
 case $dedup_exit_code in
